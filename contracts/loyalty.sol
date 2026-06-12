@@ -10,10 +10,12 @@ contract Loyalty is Ownable {
 
     PointToken public pointToken;
     mapping(address => uint256) public nextClaimTime;
-
-    event OffChainPurchase(address indexed buyer, uint256 amount, string refId);
+    mapping(string => address) public refIdForAddress;
+    mapping(string => bool) public refIdPaid;
 
     address[] public nftCollections;
+
+    event OffChainPurchase(address indexed buyer, uint256 amount, string refId);
 
     constructor(PointToken _pointToken) Ownable(msg.sender){
         pointToken = _pointToken;
@@ -36,7 +38,13 @@ contract Loyalty is Ownable {
         pointToken.mint(msg.sender, 1 ether);
     }
 
+    function addRefId(string memory refId, address buyer) public onlyOwner {
+        refIdForAddress[refId] = buyer;
+    }
+
     function offChainPurchase(uint256 amount, string memory refId) public payable {
+        require(refIdForAddress[refId] == msg.sender, "loyalty: incorrect purchase order");
+        require(!refIdPaid[refId], "loyalty: refId already paid");
         uint256 nftOwned = 0;
         for (uint256 i = 0; i < nftCollections.length; i++) {
             if (PlatformNft(nftCollections[i]).balanceOf(msg.sender) > 0) {
@@ -49,12 +57,15 @@ contract Loyalty is Ownable {
             uint256 discountedAmount = (amount * (100 - discountPercentage)) / 100;
 
             require(msg.value == discountedAmount, "loyalty: incorrect discounted payment amount");
-            emit OffChainPurchase(msg.sender, amount, refId);
+            emit OffChainPurchase(msg.sender, discountedAmount, refId);
         }
         else {
             require(msg.value == amount, "loyalty: incorrect payment amount");
             emit OffChainPurchase(msg.sender, amount, refId);
         }
+
+        refIdPaid[refId] = true;
+        pointToken.mint(msg.sender, amount);
     }
 
     function withdraw() public onlyOwner {
